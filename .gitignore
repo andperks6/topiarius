@@ -1,0 +1,10 @@
+# Zig build artifacts
+.zig-cache/
+zig-out/
+zig-pkg/
+
+# Design specs and implementation plans (kept local)
+docs/superpowers/
+
+# macOS
+.DS_Store

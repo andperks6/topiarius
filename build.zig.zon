@@ -1,0 +1,18 @@
+.{
+    .name = .topiarius,
+    .version = "0.0.0",
+    .fingerprint = 0x3838d1a9f80b6c73, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_regex = .{
+            .url = "git+https://github.com/zig-utils/zig-regex#f907aae8a9bd7c4420fa4c134593026ce48d3ffa",
+            .hash = "zig_regex-0.1.1-omky0bjpBgA0ErSVuRVtEfBTEx9KwzCt1_OBtFzQtG70",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "test",
+    },
+}

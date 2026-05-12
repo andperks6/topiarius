@@ -1,0 +1,3 @@
+curl https://example.com \
+  -H 'Accept: application/json' \
+  -o out.json
