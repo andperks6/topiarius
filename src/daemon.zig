@@ -1,5 +1,9 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Io = std.Io;
+
+const clipboard = @import("clipboard.zig");
+const transform = @import("transform");
 
 pub const sentinel_bytes = "\xE2\x80\x8B"; // U+200B ZWSP
 
@@ -83,4 +87,79 @@ test "Dedupe: shouldSkip after markSeen" {
     d.markSeen("hello");
     try std.testing.expect(d.shouldSkip("hello"));
     try std.testing.expect(!d.shouldSkip("other"));
+}
+
+pub const TickOutcome = enum {
+    skipped_sentinel,
+    skipped_dedupe,
+    transformed,
+};
+
+/// One iteration of the daemon loop. Reads the clipboard, decides whether
+/// the content is ours (sentinel) or already-handled (dedupe), and writes
+/// the trimmed + sentinel-suffixed result back when appropriate.
+pub fn tick(
+    gpa: Allocator,
+    io: Io,
+    backend: clipboard.Backend,
+    dedupe: *Dedupe,
+    level: transform.Level,
+) clipboard.Error!TickOutcome {
+    const raw = try backend.read(gpa, io);
+    defer gpa.free(raw);
+
+    if (hasSentinel(raw)) return .skipped_sentinel;
+    if (dedupe.shouldSkip(raw)) return .skipped_dedupe;
+    dedupe.markSeen(raw);
+
+    const trimmed = try transform.transform(gpa, raw, level);
+    defer gpa.free(trimmed);
+
+    const marked = try appendSentinel(gpa, trimmed);
+    defer gpa.free(marked);
+
+    try backend.write(io, marked);
+    dedupe.markWritten(trimmed);
+    return .transformed;
+}
+
+test "tick: dirty paste gets trimmed, sentinel-marked, written" {
+    const gpa = std.testing.allocator;
+    var mem: clipboard.Memory = .init(gpa);
+    defer mem.deinit();
+    try mem.setSlot("$ echo hi");
+
+    var dedupe: Dedupe = .{};
+    const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
+    try std.testing.expectEqual(TickOutcome.transformed, outcome);
+    try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
+    try std.testing.expectEqualStrings("echo hi\xE2\x80\x8B", mem.writes.items[0]);
+}
+
+test "tick: second tick over our own output is a no-op" {
+    const gpa = std.testing.allocator;
+    var mem: clipboard.Memory = .init(gpa);
+    defer mem.deinit();
+    try mem.setSlot("$ echo hi");
+
+    var dedupe: Dedupe = .{};
+    _ = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
+    const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
+    try std.testing.expectEqual(TickOutcome.skipped_sentinel, outcome);
+    try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
+}
+
+test "tick: external manager strips sentinel but bytes match last_written" {
+    const gpa = std.testing.allocator;
+    var mem: clipboard.Memory = .init(gpa);
+    defer mem.deinit();
+    try mem.setSlot("$ echo hi");
+
+    var dedupe: Dedupe = .{};
+    _ = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
+
+    // simulate an external clipboard manager rewriting our output without sentinel
+    try mem.setSlot("echo hi");
+    const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
+    try std.testing.expectEqual(TickOutcome.skipped_dedupe, outcome);
 }

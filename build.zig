@@ -70,11 +70,15 @@ pub fn build(b: *std.Build) void {
     }) });
     const run_clipboard_tests = b.addRunArtifact(clipboard_tests);
 
-    const daemon_tests = b.addTest(.{ .root_module = b.createModule(.{
+    const daemon_test_mod = b.createModule(.{
         .root_source_file = b.path("src/daemon.zig"),
         .target = target,
         .optimize = optimize,
-    }) });
+        .imports = &.{
+            .{ .name = "transform", .module = transform_mod },
+        },
+    });
+    const daemon_tests = b.addTest(.{ .root_module = daemon_test_mod });
     const run_daemon_tests = b.addRunArtifact(daemon_tests);
 
     const test_step = b.step("test", "Run unit and fixture tests");
