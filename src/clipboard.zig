@@ -106,7 +106,7 @@ pub fn systemBackend() ?Backend {
 /// `slot` and `writes` to assert behavior.
 pub const Memory = struct {
     gpa: Allocator,
-    slot: []u8,
+    slot: ?[]u8,
     writes: std.ArrayList([]u8),
     read_fail_until: usize = 0,
     read_call_count: usize = 0,
@@ -114,20 +114,21 @@ pub const Memory = struct {
     pub fn init(gpa: Allocator) Memory {
         return .{
             .gpa = gpa,
-            .slot = &.{},
+            .slot = null,
             .writes = .empty,
         };
     }
 
     pub fn deinit(self: *Memory) void {
-        if (self.slot.len != 0) self.gpa.free(self.slot);
+        if (self.slot) |s| self.gpa.free(s);
         for (self.writes.items) |w| self.gpa.free(w);
         self.writes.deinit(self.gpa);
     }
 
     pub fn setSlot(self: *Memory, bytes: []const u8) !void {
-        if (self.slot.len != 0) self.gpa.free(self.slot);
-        self.slot = try self.gpa.dupe(u8, bytes);
+        const new_slot = try self.gpa.dupe(u8, bytes);
+        if (self.slot) |s| self.gpa.free(s);
+        self.slot = new_slot;
     }
 
     fn read(ctx: ?*anyopaque, gpa: Allocator, io: Io) Error![]u8 {
@@ -135,16 +136,20 @@ pub const Memory = struct {
         const self: *Memory = @ptrCast(@alignCast(ctx.?));
         self.read_call_count += 1;
         if (self.read_call_count <= self.read_fail_until) return error.ClipboardReadFailed;
-        return gpa.dupe(u8, self.slot);
+        return gpa.dupe(u8, self.slot orelse "");
     }
 
     fn write(ctx: ?*anyopaque, io: Io, bytes: []const u8) Error!void {
         _ = io;
         const self: *Memory = @ptrCast(@alignCast(ctx.?));
         const copy = try self.gpa.dupe(u8, bytes);
+        errdefer self.gpa.free(copy);
         try self.writes.append(self.gpa, copy);
-        if (self.slot.len != 0) self.gpa.free(self.slot);
-        self.slot = try self.gpa.dupe(u8, bytes);
+        errdefer _ = self.writes.pop();
+
+        const new_slot = try self.gpa.dupe(u8, bytes);
+        if (self.slot) |s| self.gpa.free(s);
+        self.slot = new_slot;
     }
 
     const vtable: VTable = .{ .read = Memory.read, .write = Memory.write };
