@@ -29,6 +29,7 @@ zig build -Doptimize=ReleaseSafe
 ```
 topia transform [--low|--normal|--high]    Read stdin, trim, write stdout
 topia once      [--low|--normal|--high]    Read clipboard, trim, write back
+topia daemon    [--low|--normal|--high]    Poll the clipboard and trim in place
 topia shell-hook (zsh|bash|fish)           Print precmd snippet for eval
 ```
 
@@ -37,6 +38,27 @@ Trim-on-paste by sourcing the hook in your shell rc:
 ```zsh
 eval "$(topia shell-hook zsh)"
 ```
+
+## Running as a daemon
+
+`topia daemon` is a foreground poll loop: it reads the clipboard every
+250 ms, trims dirty pastes, and tags its own output with an invisible
+ZWSP suffix so it never re-trims work it already did. Run it under your
+service manager of choice (launchd plist / systemd user unit emission
+lands in v0.2-d):
+
+```sh
+topia daemon --normal
+```
+
+`SIGINT` and `SIGTERM` shut it down cleanly. `SIGHUP` is reserved for
+future config reload and currently a no-op.
+
+**Known limitation:** v0.2-a shells out to `pbpaste` / `pbcopy` /
+`wl-paste` / `wl-copy`. Those tools strip MIME-type hints, so the
+daemon cannot honor `NSPasteboardTypeTransient` or Wayland's
+`password` MIME marker yet. Privacy gating ships with v0.2-b once the
+native `@cImport` backends are in.
 
 ## Rule library
 
@@ -61,9 +83,9 @@ fixture walker exercises each through `transform.transform`.
 
 ## Roadmap
 
-- **v0.2** — `topia daemon` poll loop, native macOS clipboard via
-  `@cImport(NSPasteboard)`, IPC socket, `topia install` for
-  launchd / systemd units
-- **v0.3** — event-driven Linux backends (`wlr-data-control` on Wayland,
-  XFIXES on X11)
+- **v0.2-a** (current) — `topia daemon` poll loop on existing shell-out backends
+- **v0.2-b** — native macOS clipboard via `@cImport(NSPasteboard)` + privacy gating
+- **v0.2-c** — IPC socket (`topia status / reload / toggle / stats`)
+- **v0.2-d** — `topia install` emitting launchd plist / systemd user unit
+- **v0.3** — event-driven Linux backends (`wlr-data-control` on Wayland, XFIXES on X11)
 - **v0.4** — Windows backend via `AddClipboardFormatListener`
