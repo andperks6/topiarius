@@ -63,7 +63,15 @@ pub fn build(b: *std.Build) void {
     const fixtures_tests = b.addTest(.{ .root_module = fixtures_mod });
     const run_fixtures_tests = b.addRunArtifact(fixtures_tests);
 
+    const clipboard_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/clipboard.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    const run_clipboard_tests = b.addRunArtifact(clipboard_tests);
+
     const test_step = b.step("test", "Run unit and fixture tests");
     test_step.dependOn(&run_transform_tests.step);
     test_step.dependOn(&run_fixtures_tests.step);
+    test_step.dependOn(&run_clipboard_tests.step);
 }
