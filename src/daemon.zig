@@ -162,4 +162,5 @@ test "tick: external manager strips sentinel but bytes match last_written" {
     try mem.setSlot("echo hi");
     const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
     try std.testing.expectEqual(TickOutcome.skipped_dedupe, outcome);
+    try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
 }
