@@ -89,6 +89,23 @@ test "Dedupe: shouldSkip after markSeen" {
     try std.testing.expect(!d.shouldSkip("other"));
 }
 
+/// Suppresses repeated identical error logs from the loop. Whenever the
+/// last logged error differs (or success follows failure), the next
+/// occurrence logs again.
+pub const ErrorThrottle = struct {
+    last: ?clipboard.Error = null,
+
+    pub fn shouldLog(self: *ErrorThrottle, err: clipboard.Error) bool {
+        if (self.last) |prev| if (prev == err) return false;
+        self.last = err;
+        return true;
+    }
+
+    pub fn clear(self: *ErrorThrottle) void {
+        self.last = null;
+    }
+};
+
 pub const TickOutcome = enum {
     skipped_sentinel,
     skipped_dedupe,
@@ -163,4 +180,19 @@ test "tick: external manager strips sentinel but bytes match last_written" {
     const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
     try std.testing.expectEqual(TickOutcome.skipped_dedupe, outcome);
     try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
+}
+
+test "ErrorThrottle: first occurrence logs, repeats do not" {
+    var t: ErrorThrottle = .{};
+    try std.testing.expect(t.shouldLog(error.ClipboardReadFailed));
+    try std.testing.expect(!t.shouldLog(error.ClipboardReadFailed));
+    try std.testing.expect(t.shouldLog(error.ClipboardWriteFailed));
+    try std.testing.expect(!t.shouldLog(error.ClipboardWriteFailed));
+}
+
+test "ErrorThrottle: clear resets state" {
+    var t: ErrorThrottle = .{};
+    _ = t.shouldLog(error.ClipboardReadFailed);
+    t.clear();
+    try std.testing.expect(t.shouldLog(error.ClipboardReadFailed));
 }
