@@ -81,9 +81,17 @@ pub fn build(b: *std.Build) void {
     const daemon_tests = b.addTest(.{ .root_module = daemon_test_mod });
     const run_daemon_tests = b.addRunArtifact(daemon_tests);
 
+    const signal_tests = b.addTest(.{ .root_module = b.createModule(.{
+        .root_source_file = b.path("src/signal.zig"),
+        .target = target,
+        .optimize = optimize,
+    }) });
+    const run_signal_tests = b.addRunArtifact(signal_tests);
+
     const test_step = b.step("test", "Run unit and fixture tests");
     test_step.dependOn(&run_transform_tests.step);
     test_step.dependOn(&run_fixtures_tests.step);
     test_step.dependOn(&run_clipboard_tests.step);
     test_step.dependOn(&run_daemon_tests.step);
+    test_step.dependOn(&run_signal_tests.step);
 }
