@@ -196,3 +196,43 @@ test "ErrorThrottle: clear resets state" {
     t.clear();
     try std.testing.expect(t.shouldLog(error.ClipboardReadFailed));
 }
+
+const signal = @import("signal.zig");
+
+pub const poll_interval_ms: i64 = 250;
+
+/// Run the daemon loop until the shutdown flag is set. Spins on
+/// `backend.read` errors; logs each *new* error once.
+pub fn run(
+    gpa: Allocator,
+    io: Io,
+    backend: clipboard.Backend,
+    level: transform.Level,
+) clipboard.Error!void {
+    var dedupe: Dedupe = .{};
+    var throttle: ErrorThrottle = .{};
+
+    while (!signal.shouldShutdown()) {
+        const outcome = tick(gpa, io, backend, &dedupe, level) catch |err| {
+            if (throttle.shouldLog(err)) {
+                logErr(io, err) catch {};
+            }
+            sleepTick(io) catch return;
+            continue;
+        };
+        _ = outcome;
+        throttle.clear();
+        sleepTick(io) catch return;
+    }
+}
+
+fn sleepTick(io: Io) Io.Cancelable!void {
+    return io.sleep(.fromMilliseconds(poll_interval_ms), .awake);
+}
+
+fn logErr(io: Io, err: clipboard.Error) !void {
+    var buf: [128]u8 = undefined;
+    var stderr: Io.File.Writer = .init(.stderr(), io, &buf);
+    try stderr.interface.print("topia[daemon]: {s}\n", .{@errorName(err)});
+    try stderr.interface.flush();
+}

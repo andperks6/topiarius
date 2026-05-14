@@ -5,6 +5,9 @@ const Allocator = std.mem.Allocator;
 const transform = @import("transform");
 const shell_hook = @import("shell_hook.zig");
 const once_cmd = @import("once.zig");
+const daemon = @import("daemon.zig");
+const clipboard = @import("clipboard.zig");
+const signal = @import("signal.zig");
 
 const usage =
     \\topia — clipboard trimmer
@@ -12,7 +15,12 @@ const usage =
     \\Usage:
     \\  topia transform [--low|--normal|--high]    Read stdin, trim, write stdout
     \\  topia once      [--low|--normal|--high]    Read clipboard, trim, write back
+    \\  topia daemon    [--low|--normal|--high]    Poll the clipboard and trim in place
     \\  topia shell-hook (zsh|bash|fish)           Print precmd snippet for eval
+    \\
+    \\Note: in this release the daemon shells out to pbpaste/pbcopy/wl-paste/wl-copy.
+    \\Privacy-sensitive paste hints (NSPasteboardTypeTransient, Wayland password MIME)
+    \\are unreachable from shell-outs and will land with the native backend in v0.2-b.
     \\
 ;
 
@@ -44,6 +52,26 @@ pub fn main(init: std.process.Init) !void {
                 error.OutOfMemory => return err,
             }
             std.process.exit(1);
+        };
+        return;
+    }
+    if (std.mem.eql(u8, sub, "daemon")) {
+        const level = try parseLevel(rest);
+        const backend = clipboard.systemBackend() orelse {
+            try writeStderr(io, "topia daemon: clipboard not supported on this platform yet\n");
+            std.process.exit(3);
+        };
+        signal.installHandlers();
+        daemon.run(gpa, io, backend, level) catch |err| switch (err) {
+            error.ClipboardUnsupportedPlatform => {
+                try writeStderr(io, "topia daemon: clipboard not supported on this platform yet\n");
+                std.process.exit(3);
+            },
+            error.OutOfMemory => return err,
+            else => {
+                try writeStderr(io, "topia daemon: fatal error\n");
+                std.process.exit(1);
+            },
         };
         return;
     }
