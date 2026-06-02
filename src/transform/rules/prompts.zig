@@ -38,10 +38,13 @@ fn leadingWhitespace(line: []const u8) usize {
 }
 
 fn promptPrefixLen(body: []const u8) usize {
-    // Single ASCII char + space.
+    // Single ASCII char + space. `#` and `>` are deliberately excluded — too
+    // often a comment marker (GraphQL/Python/YAML/shell) or a markdown
+    // blockquote respectively. The bracketed `]# ` host-style prompt below
+    // still handles the rare root-shell-session case.
     if (body.len >= 2) {
         const c = body[0];
-        if ((c == '$' or c == '#' or c == '>' or c == '%') and body[1] == ' ') {
+        if ((c == '$' or c == '%') and body[1] == ' ') {
             return 2;
         }
     }
@@ -70,10 +73,16 @@ test "prompts: dollar prefix" {
     try std.testing.expectEqualStrings("echo hi", out);
 }
 
-test "prompts: hash prefix" {
+test "prompts: hash prefix is preserved (treated as comment, not root prompt)" {
     const out = try apply(std.testing.allocator, "# apt update");
     defer std.testing.allocator.free(out);
-    try std.testing.expectEqualStrings("apt update", out);
+    try std.testing.expectEqualStrings("# apt update", out);
+}
+
+test "prompts: chevron prefix is preserved (treated as markdown quote, not PS2)" {
+    const out = try apply(std.testing.allocator, "> echo hi");
+    defer std.testing.allocator.free(out);
+    try std.testing.expectEqualStrings("> echo hi", out);
 }
 
 test "prompts: wedge prefix" {
