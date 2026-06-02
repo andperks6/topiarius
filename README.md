@@ -42,10 +42,9 @@ eval "$(topia shell-hook zsh)"
 ## Running as a daemon
 
 `topia daemon` is a foreground poll loop: it reads the clipboard every
-250 ms, trims dirty pastes, and tags its own output with an invisible
-ZWSP suffix so it never re-trims work it already did. Run it under your
-service manager of choice (launchd plist / systemd user unit emission
-lands in v0.2-d):
+250 ms, trims dirty pastes, and remembers a hash of each write so it
+never re-trims work it already did. Run it under your service manager
+of choice (launchd plist / systemd user unit emission lands in v0.2-d):
 
 ```sh
 topia daemon --normal

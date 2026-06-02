@@ -5,47 +5,15 @@ const Io = std.Io;
 const clipboard = @import("clipboard.zig");
 const transform = @import("transform");
 
-pub const sentinel_bytes = "\xE2\x80\x8B"; // U+200B ZWSP
-
-pub fn hasSentinel(bytes: []const u8) bool {
-    return std.mem.endsWith(u8, bytes, sentinel_bytes);
-}
-
-pub fn appendSentinel(allocator: Allocator, bytes: []const u8) Allocator.Error![]u8 {
-    var out = try allocator.alloc(u8, bytes.len + sentinel_bytes.len);
-    @memcpy(out[0..bytes.len], bytes);
-    @memcpy(out[bytes.len..], sentinel_bytes);
-    return out;
-}
-
-test "hasSentinel: detects trailing ZWSP" {
-    try std.testing.expect(hasSentinel("hello\xE2\x80\x8B"));
-}
-
-test "hasSentinel: false on plain content" {
-    try std.testing.expect(!hasSentinel("hello"));
-}
-
-test "hasSentinel: false on ZWSP in the middle" {
-    try std.testing.expect(!hasSentinel("a\xE2\x80\x8Bb"));
-}
-
-test "hasSentinel: false on empty" {
-    try std.testing.expect(!hasSentinel(""));
-}
-
-test "appendSentinel: appends exactly one ZWSP" {
-    const gpa = std.testing.allocator;
-    const out = try appendSentinel(gpa, "abc");
-    defer gpa.free(out);
-    try std.testing.expectEqualStrings("abc\xE2\x80\x8B", out);
-}
-
 const Wyhash = std.hash.Wyhash;
 
 /// Two-slot dedupe used by the daemon loop. Avoids re-transforming
 /// content the daemon either just wrote (`last_written`) or just
 /// observed without changing (`last_seen`).
+///
+/// `last_written` doubles as our self-detection: when the next tick reads
+/// the clipboard and finds the same bytes we just wrote, the hash matches
+/// and we skip — no sentinel byte required.
 pub const Dedupe = struct {
     last_written: ?u64 = null,
     last_seen: ?u64 = null,
@@ -107,14 +75,13 @@ pub const ErrorThrottle = struct {
 };
 
 pub const TickOutcome = enum {
-    skipped_sentinel,
     skipped_dedupe,
     transformed,
 };
 
-/// One iteration of the daemon loop. Reads the clipboard, decides whether
-/// the content is ours (sentinel) or already-handled (dedupe), and writes
-/// the trimmed + sentinel-suffixed result back when appropriate.
+/// One iteration of the daemon loop. Reads the clipboard, returns early if
+/// the bytes match either dedupe slot, otherwise transforms and writes the
+/// trimmed result back verbatim — no sentinel, no clipboard pollution.
 pub fn tick(
     gpa: Allocator,
     io: Io,
@@ -125,22 +92,18 @@ pub fn tick(
     const raw = try backend.read(gpa, io);
     defer gpa.free(raw);
 
-    if (hasSentinel(raw)) return .skipped_sentinel;
     if (dedupe.shouldSkip(raw)) return .skipped_dedupe;
     dedupe.markSeen(raw);
 
     const trimmed = try transform.transform(gpa, raw, level);
     defer gpa.free(trimmed);
 
-    const marked = try appendSentinel(gpa, trimmed);
-    defer gpa.free(marked);
-
-    try backend.write(io, marked);
+    try backend.write(io, trimmed);
     dedupe.markWritten(trimmed);
     return .transformed;
 }
 
-test "tick: dirty paste gets trimmed, sentinel-marked, written" {
+test "tick: dirty paste gets trimmed and written verbatim" {
     const gpa = std.testing.allocator;
     var mem: clipboard.Memory = .init(gpa);
     defer mem.deinit();
@@ -150,10 +113,10 @@ test "tick: dirty paste gets trimmed, sentinel-marked, written" {
     const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
     try std.testing.expectEqual(TickOutcome.transformed, outcome);
     try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
-    try std.testing.expectEqualStrings("echo hi\xE2\x80\x8B", mem.writes.items[0]);
+    try std.testing.expectEqualStrings("echo hi", mem.writes.items[0]);
 }
 
-test "tick: second tick over our own output is a no-op" {
+test "tick: second tick over our own output is a no-op via dedupe" {
     const gpa = std.testing.allocator;
     var mem: clipboard.Memory = .init(gpa);
     defer mem.deinit();
@@ -162,11 +125,11 @@ test "tick: second tick over our own output is a no-op" {
     var dedupe: Dedupe = .{};
     _ = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
     const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
-    try std.testing.expectEqual(TickOutcome.skipped_sentinel, outcome);
+    try std.testing.expectEqual(TickOutcome.skipped_dedupe, outcome);
     try std.testing.expectEqual(@as(usize, 1), mem.writes.items.len);
 }
 
-test "tick: external manager strips sentinel but bytes match last_written" {
+test "tick: external manager re-broadcasting trimmed bytes is a no-op" {
     const gpa = std.testing.allocator;
     var mem: clipboard.Memory = .init(gpa);
     defer mem.deinit();
@@ -175,7 +138,7 @@ test "tick: external manager strips sentinel but bytes match last_written" {
     var dedupe: Dedupe = .{};
     _ = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
 
-    // simulate an external clipboard manager rewriting our output without sentinel
+    // Simulate an external clipboard manager re-writing the trimmed bytes.
     try mem.setSlot("echo hi");
     const outcome = try tick(gpa, std.testing.io, mem.backend(), &dedupe, .normal);
     try std.testing.expectEqual(TickOutcome.skipped_dedupe, outcome);
