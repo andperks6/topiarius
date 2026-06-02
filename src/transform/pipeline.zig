@@ -1,6 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
+const gates = @import("gates.zig");
 const continuations = @import("rules/continuations.zig");
 const ansi = @import("rules/ansi.zig");
 const prompts = @import("rules/prompts.zig");
@@ -48,8 +49,14 @@ const high_rules = [_]Rule{
 };
 
 /// Apply the configured rule set to `input` and return a freshly allocated
-/// trimmed copy. Caller owns the returned slice.
+/// trimmed copy. Caller owns the returned slice. If a gate matches the input
+/// (e.g. structured JSON), the rules are skipped entirely and `input` is
+/// returned verbatim.
 pub fn transform(allocator: Allocator, input: []const u8, level: Level) Allocator.Error![]u8 {
+    if (gates.shouldSkipAll(input)) {
+        return allocator.dupe(u8, input);
+    }
+
     const rules: []const Rule = switch (level) {
         .low => &low_rules,
         .normal => &normal_rules,
@@ -85,7 +92,24 @@ test "transform: normal level strips prompt prefix" {
     try std.testing.expectEqualStrings("echo hi", out);
 }
 
+test "transform: JSON gate returns input verbatim at every level" {
+    const json =
+        \\{
+        \\  "Version": "2012-10-17",
+        \\  "Statement": [
+        \\    { "Effect": "Allow" }
+        \\  ]
+        \\}
+    ;
+    inline for (.{ Level.low, Level.normal, Level.high }) |level| {
+        const out = try transform(std.testing.allocator, json, level);
+        defer std.testing.allocator.free(out);
+        try std.testing.expectEqualStrings(json, out);
+    }
+}
+
 test {
+    _ = gates;
     _ = continuations;
     _ = ansi;
     _ = prompts;
