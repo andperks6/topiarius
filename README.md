@@ -83,14 +83,28 @@ topia daemon --normal
 `SIGINT` and `SIGTERM` shut it down cleanly. `SIGHUP` is reserved for
 future config reload and currently a no-op.
 
-### Auto-start via launchd / systemd
+### Auto-start at login
 
-`topia install` prints a service unit for the host platform; pipe it to
-the path your service manager expects and load it yourself. The binary's
-own absolute path is embedded, so the unit keeps working even if your
-`$PATH` changes.
+#### macOS via Homebrew services (easiest)
 
-**macOS (launchd):**
+If you installed via the tap, `brew services` wraps launchd for you:
+
+```sh
+brew services start topiarius   # start now + load at every login
+brew services stop topiarius    # stop now + unload from login
+brew services restart topiarius # pick up a config change
+brew services list              # show current state
+```
+
+Logs land at `$(brew --prefix)/var/log/topiarius.log` and
+`topiarius.err.log`. The `--normal` aggressiveness is baked in; to use a
+different level, edit the formula or fall through to the manual paths
+below.
+
+#### macOS via launchd directly (non-brew installs)
+
+`topia install launchd` prints a plist with the running binary's
+absolute path embedded. Pipe it where launchd looks for user agents:
 
 ```sh
 mkdir -p ~/Library/LaunchAgents
@@ -98,7 +112,7 @@ topia install launchd > ~/Library/LaunchAgents/io.github.andperks6.topiarius.pli
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.andperks6.topiarius.plist
 ```
 
-To stop and uninstall:
+Stop + uninstall:
 
 ```sh
 launchctl bootout gui/$(id -u)/io.github.andperks6.topiarius
@@ -107,7 +121,7 @@ rm ~/Library/LaunchAgents/io.github.andperks6.topiarius.plist
 
 Logs land in `/tmp/topiarius.out.log` and `/tmp/topiarius.err.log`.
 
-**Linux (systemd user service):**
+#### Linux (systemd user service)
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -116,7 +130,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now topiarius
 ```
 
-To stop and uninstall:
+Stop + uninstall:
 
 ```sh
 systemctl --user disable --now topiarius
