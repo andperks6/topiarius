@@ -8,6 +8,7 @@ const once_cmd = @import("once.zig");
 const daemon = @import("daemon.zig");
 const clipboard = @import("clipboard.zig");
 const signal = @import("signal.zig");
+const install_cmd = @import("install.zig");
 
 const usage =
     \\topia — clipboard trimmer
@@ -17,6 +18,10 @@ const usage =
     \\  topia once      [--low|--normal|--high]    Read clipboard, trim, write back
     \\  topia daemon    [--low|--normal|--high]    Poll the clipboard and trim in place
     \\  topia shell-hook (zsh|bash|fish)           Print precmd snippet for eval
+    \\  topia install   [launchd|systemd] [--low|--normal|--high]
+    \\                                             Print service unit for the host (or
+    \\                                             named) supervisor; pipe to the path
+    \\                                             your service manager expects.
     \\
     \\Note: in this release the daemon shells out to pbpaste/pbcopy/wl-paste/wl-copy.
     \\Privacy-sensitive paste hints (NSPasteboardTypeTransient, Wayland password MIME)
@@ -73,6 +78,45 @@ pub fn main(init: std.process.Init) !void {
                 std.process.exit(1);
             },
         };
+        return;
+    }
+    if (std.mem.eql(u8, sub, "install")) {
+        var platform: ?install_cmd.Platform = null;
+        var level: transform.Level = .normal;
+        for (rest) |arg| {
+            if (std.mem.eql(u8, arg, "--low")) {
+                level = .low;
+            } else if (std.mem.eql(u8, arg, "--normal")) {
+                level = .normal;
+            } else if (std.mem.eql(u8, arg, "--high")) {
+                level = .high;
+            } else if (install_cmd.parse(arg)) |p| {
+                if (platform != null) {
+                    try writeStderr(io, "topia install: too many positional arguments\n");
+                    std.process.exit(2);
+                }
+                platform = p;
+            } else {
+                try writeStderr(io, "topia install: unknown argument (expected launchd|systemd|--low|--normal|--high)\n");
+                std.process.exit(2);
+            }
+        }
+
+        const resolved = platform orelse install_cmd.defaultPlatform() orelse {
+            try writeStderr(io, "topia install: no default service manager for this platform (pass launchd or systemd explicitly)\n");
+            std.process.exit(3);
+        };
+
+        const bin = try std.process.executablePathAlloc(io, gpa);
+        defer gpa.free(bin);
+
+        var buf: [4096]u8 = undefined;
+        var stdout_file_writer: Io.File.Writer = .init(.stdout(), io, &buf);
+        try install_cmd.write(&stdout_file_writer.interface, resolved, .{
+            .binary_path = bin,
+            .level = level,
+        });
+        try stdout_file_writer.interface.flush();
         return;
     }
     if (std.mem.eql(u8, sub, "shell-hook")) {

@@ -88,12 +88,24 @@ pub fn build(b: *std.Build) void {
     }) });
     const run_signal_tests = b.addRunArtifact(signal_tests);
 
+    const install_test_mod = b.createModule(.{
+        .root_source_file = b.path("src/install.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "transform", .module = transform_mod },
+        },
+    });
+    const install_tests = b.addTest(.{ .root_module = install_test_mod });
+    const run_install_tests = b.addRunArtifact(install_tests);
+
     const test_step = b.step("test", "Run unit and fixture tests");
     test_step.dependOn(&run_transform_tests.step);
     test_step.dependOn(&run_fixtures_tests.step);
     test_step.dependOn(&run_clipboard_tests.step);
     test_step.dependOn(&run_daemon_tests.step);
     test_step.dependOn(&run_signal_tests.step);
+    test_step.dependOn(&run_install_tests.step);
 
     // --- Release: cross-compile one binary per target into zig-out/release/ ---
 
