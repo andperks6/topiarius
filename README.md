@@ -15,13 +15,43 @@ v0.1 MVP. macOS and Linux clipboard via `pbpaste` / `pbcopy` /
 `wl-paste` / `wl-copy` shell-outs. Daemon mode, native clipboard APIs,
 and Windows support come in v0.2+.
 
-## Build
+## Install
+
+### Homebrew (macOS, Linux)
+
+```sh
+brew tap andperks6/topiarius
+brew install topiarius
+```
+
+### Pre-built binary
+
+Grab a binary for your platform from the [latest
+release](https://github.com/andperks6/topiarius/releases/latest) and put it
+on your `$PATH`. macOS Gatekeeper may quarantine downloaded files; clear it
+with:
+
+```sh
+xattr -d com.apple.quarantine ~/Downloads/topia-aarch64-macos
+chmod +x ~/Downloads/topia-aarch64-macos
+mv ~/Downloads/topia-aarch64-macos /usr/local/bin/topia
+```
+
+### From source
 
 Requires Zig 0.16.
 
-```
+```sh
 zig build -Doptimize=ReleaseSafe
 ./zig-out/bin/topia --help
+```
+
+Cross-compile every supported target in one go:
+
+```sh
+zig build release
+ls zig-out/release/
+# topia-aarch64-linux  topia-aarch64-macos  topia-x86_64-linux  topia-x86_64-macos
 ```
 
 ## Usage
