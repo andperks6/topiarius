@@ -8,6 +8,8 @@ const box_drawing = @import("rules/box_drawing.zig");
 const zero_widths = @import("rules/zero_widths.zig");
 const smart_quotes = @import("rules/smart_quotes.zig");
 const dashes = @import("rules/dashes.zig");
+const soft_wraps = @import("rules/soft_wraps.zig");
+const gaps = @import("rules/gaps.zig");
 const whitespace = @import("rules/whitespace.zig");
 
 /// Aggressiveness levels are subsets of the full rule set. See the design
@@ -29,6 +31,8 @@ const normal_rules = [_]Rule{
     prompts.apply,
     box_drawing.apply,
     zero_widths.apply,
+    soft_wraps.apply,
+    gaps.apply,
 };
 
 const high_rules = [_]Rule{
@@ -39,6 +43,7 @@ const high_rules = [_]Rule{
     zero_widths.apply,
     smart_quotes.apply,
     dashes.apply,
+    soft_wraps.apply,
     whitespace.apply,
 };
 
@@ -88,5 +93,7 @@ test {
     _ = zero_widths;
     _ = smart_quotes;
     _ = dashes;
+    _ = soft_wraps;
+    _ = gaps;
     _ = whitespace;
 }
