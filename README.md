@@ -83,6 +83,49 @@ topia daemon --normal
 `SIGINT` and `SIGTERM` shut it down cleanly. `SIGHUP` is reserved for
 future config reload and currently a no-op.
 
+### Auto-start via launchd / systemd
+
+`topia install` prints a service unit for the host platform; pipe it to
+the path your service manager expects and load it yourself. The binary's
+own absolute path is embedded, so the unit keeps working even if your
+`$PATH` changes.
+
+**macOS (launchd):**
+
+```sh
+mkdir -p ~/Library/LaunchAgents
+topia install launchd > ~/Library/LaunchAgents/io.github.andperks6.topiarius.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.github.andperks6.topiarius.plist
+```
+
+To stop and uninstall:
+
+```sh
+launchctl bootout gui/$(id -u)/io.github.andperks6.topiarius
+rm ~/Library/LaunchAgents/io.github.andperks6.topiarius.plist
+```
+
+Logs land in `/tmp/topiarius.out.log` and `/tmp/topiarius.err.log`.
+
+**Linux (systemd user service):**
+
+```sh
+mkdir -p ~/.config/systemd/user
+topia install systemd > ~/.config/systemd/user/topiarius.service
+systemctl --user daemon-reload
+systemctl --user enable --now topiarius
+```
+
+To stop and uninstall:
+
+```sh
+systemctl --user disable --now topiarius
+rm ~/.config/systemd/user/topiarius.service
+```
+
+Pass `--low` / `--normal` / `--high` to `topia install` to choose the
+aggressiveness baked into the unit.
+
 **Known limitation:** v0.2-a shells out to `pbpaste` / `pbcopy` /
 `wl-paste` / `wl-copy`. Those tools strip MIME-type hints, so the
 daemon cannot honor `NSPasteboardTypeTransient` or Wayland's
