@@ -94,4 +94,47 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_clipboard_tests.step);
     test_step.dependOn(&run_daemon_tests.step);
     test_step.dependOn(&run_signal_tests.step);
+
+    // --- Release: cross-compile one binary per target into zig-out/release/ ---
+
+    const release_step = b.step("release", "Cross-compile release binaries into zig-out/release/");
+    const release_targets = [_]std.Target.Query{
+        .{ .cpu_arch = .aarch64, .os_tag = .macos },
+        .{ .cpu_arch = .x86_64, .os_tag = .macos },
+        .{ .cpu_arch = .aarch64, .os_tag = .linux },
+        .{ .cpu_arch = .x86_64, .os_tag = .linux },
+    };
+
+    for (release_targets) |query| {
+        const release_target = b.resolveTargetQuery(query);
+        const release_regex = b.dependency("zig_regex", .{
+            .target = release_target,
+            .optimize = .ReleaseSafe,
+        });
+        const release_transform_mod = b.createModule(.{
+            .root_source_file = b.path("src/transform.zig"),
+            .target = release_target,
+            .optimize = .ReleaseSafe,
+            .imports = &.{
+                .{ .name = "regex", .module = release_regex.module("regex") },
+            },
+        });
+        const release_exe = b.addExecutable(.{
+            .name = "topia",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = release_target,
+                .optimize = .ReleaseSafe,
+                .imports = &.{
+                    .{ .name = "transform", .module = release_transform_mod },
+                },
+            }),
+        });
+        const triple = query.zigTriple(b.allocator) catch @panic("OOM");
+        const release_install = b.addInstallArtifact(release_exe, .{
+            .dest_dir = .{ .override = .{ .custom = "release" } },
+            .dest_sub_path = b.fmt("topia-{s}", .{triple}),
+        });
+        release_step.dependOn(&release_install.step);
+    }
 }
